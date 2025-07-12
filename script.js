@@ -1,10 +1,11 @@
 // --- IndexedDB Setup ---
 const DB_NAME = 'kol_management_db';
-const DB_VERSION = 6; // Incremented version for platform general code
+const DB_VERSION = 7; // Incremented version for gender
 const STORE_NAME = 'kols';
         const STORES = {
             kols: 'kols',
             countries: 'countries',
+            genders: 'genders',
             ageRanges: 'age_ranges',
             packages: 'packages',
             platforms: 'platforms'
@@ -121,6 +122,12 @@ const STORE_NAME = 'kols';
                         };
                     }
                 }
+                 // Migration for version 7: Add genders store
+                 if (event.oldVersion < 7) {
+                    if (!db.objectStoreNames.contains(STORES.genders)) {
+                        db.createObjectStore(STORES.genders, { keyPath: 'id', autoIncrement: true });
+                    }
+                }
             };
 
             request.onsuccess = (event) => {
@@ -220,11 +227,13 @@ const STORE_NAME = 'kols';
             const generalCodeCloseBtn = generalCodeModal.querySelector('.modal-close-btn');
 
             const countriesList = document.getElementById('countries-list');
+            const gendersList = document.getElementById('genders-list');
             const ageRangesList = document.getElementById('age-ranges-list');
             const packagesList = document.getElementById('packages-list');
             const platformsList = document.getElementById('platforms-list');
 
             const addCountryBtn = document.getElementById('add-country-btn');
+            const addGenderBtn = document.getElementById('add-gender-btn');
             const addAgeRangeBtn = document.getElementById('add-age-range-btn');
             const addPackageBtn = document.getElementById('add-package-btn');
             const addPlatformBtnGeneral = document.getElementById('add-platform-btn-general');
@@ -1134,6 +1143,7 @@ const STORE_NAME = 'kols';
 
             const loadAllGeneralCodeData = () => {
                 loadGeneralCodeData(STORES.countries, countriesList);
+                loadGeneralCodeData(STORES.genders, gendersList);
                 loadGeneralCodeData(STORES.ageRanges, ageRangesList);
                 loadGeneralCodeData(STORES.packages, packagesList);
                 loadGeneralCodeData(STORES.platforms, platformsList);
@@ -1167,6 +1177,7 @@ const STORE_NAME = 'kols';
             });
 
             addCountryBtn.addEventListener('click', () => openGeneralCodeModal(STORES.countries, 'Add/Edit Country'));
+            addGenderBtn.addEventListener('click', () => openGeneralCodeModal(STORES.genders, 'Add/Edit Gender'));
             addAgeRangeBtn.addEventListener('click', () => openGeneralCodeModal(STORES.ageRanges, 'Add/Edit Age Range'));
             addPackageBtn.addEventListener('click', () => openGeneralCodeModal(STORES.packages, 'Add/Edit Package'));
             addPlatformBtnGeneral.addEventListener('click', () => openGeneralCodeModal(STORES.platforms, 'Add/Edit Platform'));
@@ -1191,6 +1202,7 @@ const STORE_NAME = 'kols';
                         const data = event.target.result;
                         let title = '';
                         if (storeName === STORES.countries) title = 'Edit Country';
+                        if (storeName === STORES.genders) title = 'Edit Gender';
                         if (storeName === STORES.ageRanges) title = 'Edit Age Range';
                         if (storeName === STORES.packages) title = 'Edit Package';
                         if (storeName === STORES.platforms) title = 'Edit Platform';
