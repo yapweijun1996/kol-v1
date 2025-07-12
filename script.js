@@ -1214,6 +1214,35 @@ const STORE_NAME = 'kols';
             // Moved renderKOLs and showView to loadKOLsFromDB callback
             const generateReportBtn = document.getElementById('generate-report-btn');
             const reportList = document.getElementById('report-list');
+            let kolFollowersChart = null;
+            let kolPackageQuotationChart = null;
+
+            const renderFollowersChart = (data) => {
+                const ctx = document.getElementById('kol-followers-chart').getContext('2d');
+                if (kolFollowersChart) {
+                    kolFollowersChart.destroy();
+                }
+                kolFollowersChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: data.map(item => item.name),
+                        datasets: [{
+                            label: 'Total Followers',
+                            data: data.map(item => item.totalFollowers),
+                            backgroundColor: 'rgba(74, 144, 226, 0.5)',
+                            borderColor: 'rgba(74, 144, 226, 1)',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        scales: {
+                            y: {
+                                beginAtZero: true
+                            }
+                        }
+                    }
+                });
+            };
 
             const renderReport = (data) => {
                 reportList.innerHTML = '';
@@ -1225,6 +1254,7 @@ const STORE_NAME = 'kols';
                     `;
                     reportList.appendChild(row);
                 });
+                renderFollowersChart(data);
             };
 
             generateReportBtn.addEventListener('click', () => {
@@ -1343,6 +1373,59 @@ const STORE_NAME = 'kols';
                 }
             };
 
+            const renderPackageChart = (data) => {
+                const ctx = document.getElementById('kol-package-quotation-chart').getContext('2d');
+                if (kolPackageQuotationChart) {
+                    kolPackageQuotationChart.destroy();
+                }
+                kolPackageQuotationChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: data.map(item => `${item.kolName} (${item.platformName})`),
+                        datasets: [{
+                            label: 'Quotation Price (SGD)',
+                            data: data.map(item => item.quotationPrice),
+                            backgroundColor: 'rgba(74, 144, 226, 0.5)',
+                            borderColor: 'rgba(74, 144, 226, 1)',
+                            borderWidth: 1,
+                            yAxisID: 'y-axis-price'
+                        }, {
+                            label: 'Cost / 1k Followers (SGD)',
+                            data: data.map(item => item.followers > 0 ? (item.quotationPrice / item.followers) * 1000 : 0),
+                            backgroundColor: 'rgba(255, 193, 7, 0.5)',
+                            borderColor: 'rgba(255, 193, 7, 1)',
+                            borderWidth: 1,
+                            yAxisID: 'y-axis-cost'
+                        }]
+                    },
+                    options: {
+                        scales: {
+                            'y-axis-price': {
+                                type: 'linear',
+                                position: 'left',
+                                beginAtZero: true,
+                                title: {
+                                    display: true,
+                                    text: 'Quotation Price (SGD)'
+                                }
+                            },
+                            'y-axis-cost': {
+                                type: 'linear',
+                                position: 'right',
+                                beginAtZero: true,
+                                title: {
+                                    display: true,
+                                    text: 'Cost / 1k Followers (SGD)'
+                                },
+                                grid: {
+                                    drawOnChartArea: false // only draw grid lines for the first Y axis
+                                }
+                            }
+                        }
+                    }
+                });
+            };
+
             const renderPackageReport = (data) => {
                 packageReportList.innerHTML = '';
                 data.forEach(item => {
@@ -1357,6 +1440,7 @@ const STORE_NAME = 'kols';
                     `;
                     packageReportList.appendChild(row);
                 });
+                renderPackageChart(data);
             };
 
             generatePackageReportBtn.addEventListener('click', async () => {
@@ -1397,7 +1481,8 @@ const STORE_NAME = 'kols';
                     });
 
                     if (selectedPlatform) {
-                        reportData = reportData.filter(item => item.platformName === selectedPlatform);
+                        const platformDesc = platformSelectReport.options[platformSelectReport.selectedIndex].text;
+                        reportData = reportData.filter(item => item.platformName === platformDesc);
                     }
 
                     renderPackageReport(reportData);
