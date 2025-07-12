@@ -128,6 +128,27 @@ const STORE_NAME = 'kols';
                         db.createObjectStore(STORES.genders, { keyPath: 'id', autoIncrement: true });
                     }
                 }
+
+                // Migration for version 8: Add genders to platforms
+                if (event.oldVersion < 8) {
+                    const transaction = event.currentTarget.transaction;
+                    const objectStore = transaction.objectStore(STORE_NAME);
+                    objectStore.openCursor().onsuccess = (event) => {
+                        const cursor = event.target.result;
+                        if (cursor) {
+                            const kol = cursor.value;
+                            if (kol.platforms) {
+                                kol.platforms.forEach(platform => {
+                                    if (!platform.genders) {
+                                        platform.genders = [];
+                                    }
+                                });
+                            }
+                            cursor.update(kol);
+                            cursor.continue();
+                        }
+                    };
+                }
             };
 
             request.onsuccess = (event) => {
@@ -212,9 +233,11 @@ const STORE_NAME = 'kols';
             const cancelManageDetailsBtn = document.getElementById('cancel-manage-details');
             const manageDetailsCloseBtn = manageDetailsModal.querySelector('.modal-close-btn');
             const countriesManagementContainer = document.getElementById('countries-management-container');
+            const gendersManagementContainer = document.getElementById('genders-management-container');
             const ageRangesManagementContainer = document.getElementById('age-ranges-management-container');
             const packagesManagementContainer = document.getElementById('packages-management-container');
             const addManagedCountryRowBtn = document.getElementById('add-managed-country-row-btn');
+            const addManagedGenderRowBtn = document.getElementById('add-managed-gender-row-btn');
             const addManagedAgeRangeRowBtn = document.getElementById('add-managed-age-range-row-btn');
 
             // General Code Elements
@@ -305,12 +328,14 @@ const STORE_NAME = 'kols';
                                             { countryCode: 'SG', percentage: 70, exactNumber: 84000, id: 'c1' },
                                             { countryCode: 'MY', percentage: 20, exactNumber: 24000, id: 'c2' }
                                         ],
+                                        genders: [],
                                         ageRanges: [],
                                         packages: []
                                     },
                                     {
                                         platformName: 'Instagram', handle: '@alice.j', followers: 30000, id: 'p2',
                                         countries: [],
+                                        genders: [],
                                         ageRanges: [],
                                         packages: []
                                     }
@@ -325,6 +350,7 @@ const STORE_NAME = 'kols';
                                         countries: [
                                             { countryCode: 'SG', percentage: 50, exactNumber: 37500, id: 'c3' }
                                         ],
+                                        genders: [],
                                         ageRanges: [],
                                         packages: []
                                     }
@@ -337,6 +363,7 @@ const STORE_NAME = 'kols';
                                     {
                                         platformName: 'Twitter', handle: '@charlieb', followers: 180000, id: 'p4',
                                         countries: [],
+                                        genders: [],
                                         ageRanges: [],
                                         packages: []
                                     },
@@ -345,6 +372,7 @@ const STORE_NAME = 'kols';
                                         countries: [
                                             { countryCode: 'MY', percentage: 80, exactNumber: 32000, id: 'c4' }
                                         ],
+                                        genders: [],
                                         ageRanges: [],
                                         packages: []
                                     }
@@ -548,6 +576,7 @@ const STORE_NAME = 'kols';
                 currentPlatformId = platform.id;
                 manageDetailsModal.classList.remove('hidden');
                 await renderCountryManagement(platform);
+                await renderGenderManagement(platform);
                 await renderAgeRangeManagement(platform);
                 await renderPackageManagement(platform);
             };
@@ -596,6 +625,25 @@ const STORE_NAME = 'kols';
                 });
             };
 
+            const getGenderOptionsFromDB = () => {
+                return new Promise((resolve, reject) => {
+                    if (!db) {
+                        reject("IndexedDB not ready.");
+                        return;
+                    }
+                    const transaction = db.transaction([STORES.genders], 'readonly');
+                    const objectStore = transaction.objectStore(STORES.genders);
+                    const request = objectStore.getAll();
+
+                    request.onsuccess = (event) => {
+                        resolve(event.target.result);
+                    };
+                    request.onerror = (event) => {
+                        reject('Error fetching genders from IndexedDB: ' + event.target.error);
+                    };
+                });
+            };
+
             const getPackageOptionsFromDB = () => {
                 return new Promise((resolve, reject) => {
                     if (!db) {
@@ -621,6 +669,15 @@ const STORE_NAME = 'kols';
                 (platform.countries || []).forEach(country => {
                     const row = createDynamicInputRow(country, countryOptions, 'countryCode', platform.followers);
                     countriesManagementContainer.appendChild(row);
+                });
+            };
+
+            const renderGenderManagement = async (platform) => {
+                gendersManagementContainer.innerHTML = '';
+                const genderOptions = await getGenderOptionsFromDB();
+                (platform.genders || []).forEach(gender => {
+                    const row = createDynamicInputRow(gender, genderOptions, 'genderCode', platform.followers);
+                    gendersManagementContainer.appendChild(row);
                 });
             };
 
@@ -670,9 +727,18 @@ const STORE_NAME = 'kols';
                 const rowDiv = document.createElement('div');
                 rowDiv.classList.add('country-input-row'); // Reusing existing style
                 
+                let labelText = 'Code';
+                if (codeKey.includes('country')) {
+                    labelText = 'Country';
+                } else if (codeKey.includes('ageRange')) {
+                    labelText = 'Age Range';
+                } else if (codeKey.includes('gender')) {
+                    labelText = 'Gender';
+                }
+
                 rowDiv.innerHTML = `
                     <div class="input-group">
-                        <label>${codeKey.includes('country') ? 'Country' : 'Age Range'}</label>
+                        <label>${labelText}</label>
                         <select class="code-select" required>
                             <option value="">Select</option>
                             ${options.map(opt => `<option value="${opt.code}" ${item[codeKey] === opt.code ? 'selected' : ''}>${opt.desc}</option>`).join('')}
@@ -1048,6 +1114,15 @@ const STORE_NAME = 'kols';
                 ageRangesManagementContainer.appendChild(row);
             });
 
+            addManagedGenderRowBtn.addEventListener('click', async () => {
+                const kol = kols.find(k => k.id === currentKOLId);
+                const platform = kol ? kol.platforms.find(p => p.id === currentPlatformId) : null;
+                if (!platform) return;
+                const genderOptions = await getGenderOptionsFromDB();
+                const row = createDynamicInputRow({}, genderOptions, 'genderCode', platform.followers);
+                gendersManagementContainer.appendChild(row);
+            });
+
             manageDetailsForm.addEventListener('submit', (e) => {
                 e.preventDefault();
                 const kol = kols.find(k => k.id === currentKOLId);
@@ -1066,6 +1141,19 @@ const STORE_NAME = 'kols';
                     }
                 });
                 platform.countries = updatedCountries;
+
+                // Save genders
+                const genderRows = gendersManagementContainer.querySelectorAll('.country-input-row');
+                const updatedGenders = [];
+                genderRows.forEach(row => {
+                    const code = row.querySelector('.code-select').value;
+                    const percentage = parseFloat(row.querySelector('.percentage-input').value);
+                    const exactNumber = parseInt(row.querySelector('.exact-number-input').value, 10);
+                    if (code && (!isNaN(percentage) || !isNaN(exactNumber))) {
+                        updatedGenders.push({ genderCode: code, percentage: percentage || null, exactNumber: exactNumber || null });
+                    }
+                });
+                platform.genders = updatedGenders;
 
                 // Save age ranges
                 const ageRangeRows = ageRangesManagementContainer.querySelectorAll('.country-input-row');
