@@ -1893,22 +1893,38 @@ const STORE_NAME = 'kols';
 
     // Export function
     async function exportIndexedDB() {
-        const transaction = db.transaction([STORE_NAME], 'readonly');
-        const objectStore = transaction.objectStore(STORE_NAME);
-        const request = objectStore.getAll();
+        const exportData = {};
+        const storeNames = Object.values(STORES);
+        const transaction = db.transaction(storeNames, 'readonly');
+        let promises = [];
 
-        request.onsuccess = (event) => {
-            const data = event.target.result;
-            const json = JSON.stringify(data, null, 2);
+        storeNames.forEach(storeName => {
+            const objectStore = transaction.objectStore(storeName);
+            const request = objectStore.getAll();
+            const promise = new Promise((resolve, reject) => {
+                request.onsuccess = (event) => {
+                    exportData[storeName] = event.target.result;
+                    resolve();
+                };
+                request.onerror = (event) => {
+                    reject(`Error exporting ${storeName}: ${event.target.error}`);
+                };
+            });
+            promises.push(promise);
+        });
+
+        try {
+            await Promise.all(promises);
+            const json = JSON.stringify(exportData, null, 2);
             const blob = new Blob([json], { type: 'application/json' });
 
             const now = new Date();
             const timestamp = now.getFullYear() + '-' +
-                              String(now.getMonth() + 1).padStart(2, '0') + '-' +
-                              String(now.getDate()).padStart(2, '0') + '_' +
-                              String(now.getHours()).padStart(2, '0') + '-' +
-                              String(now.getMinutes()).padStart(2, '0') + '-' +
-                              String(now.getSeconds()).padStart(2, '0');
+                String(now.getMonth() + 1).padStart(2, '0') + '-' +
+                String(now.getDate()).padStart(2, '0') + '_' +
+                String(now.getHours()).padStart(2, '0') + '-' +
+                String(now.getMinutes()).padStart(2, '0') + '-' +
+                String(now.getSeconds()).padStart(2, '0');
             const filename = `indexedDB_export_${timestamp}.json`;
 
             const url = URL.createObjectURL(blob);
@@ -1920,12 +1936,10 @@ const STORE_NAME = 'kols';
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
             alert('IndexedDB data exported successfully!');
-        };
-
-        request.onerror = (event) => {
-            console.error('Error exporting IndexedDB:', event.target.error);
+        } catch (error) {
+            console.error('Error exporting IndexedDB:', error);
             alert('Failed to export IndexedDB data.');
-        };
+        }
     }
 
     // Import function
@@ -1939,32 +1953,52 @@ const STORE_NAME = 'kols';
         reader.onload = async (event) => {
             try {
                 const data = JSON.parse(event.target.result);
+                const storeNames = Object.values(STORES);
 
-                if (!Array.isArray(data)) {
-                    alert('Invalid JSON format. Expected an array of KOLs.');
+                // Check if the imported data is in the old array format for backward compatibility
+                if (Array.isArray(data)) {
+                    // Handle old format (array of KOLs)
+                    const transaction = db.transaction([STORES.kols], 'readwrite');
+                    const objectStore = transaction.objectStore(STORES.kols);
+                    objectStore.clear();
+                    data.forEach(kol => {
+                        objectStore.put(kol);
+                    });
+                    transaction.oncomplete = () => {
+                        alert('Old format data imported successfully! Page will reload.');
+                        location.reload();
+                    };
+                    return;
+                }
+                
+                // Handle new format (object with keys for each store)
+                if (typeof data !== 'object' || data === null || !storeNames.some(key => key in data)) {
+                    alert('Invalid JSON format. Expected an object with store names as keys or an array of KOLs.');
                     return;
                 }
 
-                // Clear existing data and add new data
-                const transaction = db.transaction([STORE_NAME], 'readwrite');
-                const objectStore = transaction.objectStore(STORE_NAME);
-
-                objectStore.clear(); // Clear all existing data
-
-                data.forEach(kol => {
-                    objectStore.put(kol); // Add each KOL from the imported data
-                });
+                const transaction = db.transaction(storeNames, 'readwrite');
 
                 transaction.oncomplete = () => {
                     console.log('IndexedDB data imported successfully!');
                     alert('IndexedDB data imported successfully! Page will reload to apply changes.');
-                    location.reload(); // Reload page to reflect new data
+                    location.reload();
                 };
 
                 transaction.onerror = (event) => {
                     console.error('Error importing IndexedDB:', event.target.error);
                     alert('Failed to import IndexedDB data.');
                 };
+
+                storeNames.forEach(storeName => {
+                    if (data[storeName] && Array.isArray(data[storeName])) {
+                        const objectStore = transaction.objectStore(storeName);
+                        objectStore.clear(); // Clear existing data
+                        data[storeName].forEach(item => {
+                            objectStore.put(item);
+                        });
+                    }
+                });
 
             } catch (e) {
                 console.error('Error parsing JSON or importing data:', e);
