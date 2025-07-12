@@ -1,12 +1,13 @@
 // --- IndexedDB Setup ---
 const DB_NAME = 'kol_management_db';
-const DB_VERSION = 5; // Incremented version for platform details
+const DB_VERSION = 6; // Incremented version for platform general code
 const STORE_NAME = 'kols';
         const STORES = {
             kols: 'kols',
             countries: 'countries',
             ageRanges: 'age_ranges',
-            packages: 'packages'
+            packages: 'packages',
+            platforms: 'platforms'
         };
         let db;
 
@@ -98,6 +99,27 @@ const STORE_NAME = 'kols';
                             cursor.continue();
                         }
                     };
+                }
+
+                // Migration for version 6: Add platforms general code store
+                if (event.oldVersion < 6) {
+                    if (!db.objectStoreNames.contains(STORES.platforms)) {
+                        const platformStore = db.createObjectStore(STORES.platforms, { keyPath: 'id', autoIncrement: true });
+                        // Add initial platform data
+                        platformStore.transaction.oncomplete = (event) => {
+                            const platformObjectStore = db.transaction(STORES.platforms, 'readwrite').objectStore(STORES.platforms);
+                            const initialPlatforms = [
+                                { code: 'TT', desc: 'TikTok' },
+                                { code: 'IG', desc: 'Instagram' },
+                                { code: 'YT', desc: 'YouTube' },
+                                { code: 'TW', desc: 'Twitter' },
+                                { code: 'TTV', desc: 'Twitch' }
+                            ];
+                            initialPlatforms.forEach(platform => {
+                                platformObjectStore.add(platform);
+                            });
+                        };
+                    }
                 }
             };
 
@@ -200,10 +222,12 @@ const STORE_NAME = 'kols';
             const countriesList = document.getElementById('countries-list');
             const ageRangesList = document.getElementById('age-ranges-list');
             const packagesList = document.getElementById('packages-list');
+            const platformsList = document.getElementById('platforms-list');
 
             const addCountryBtn = document.getElementById('add-country-btn');
             const addAgeRangeBtn = document.getElementById('add-age-range-btn');
             const addPackageBtn = document.getElementById('add-package-btn');
+            const addPlatformBtnGeneral = document.getElementById('add-platform-btn-general');
 
             let currentGeneralCodeStore = '';
 
@@ -459,7 +483,8 @@ const STORE_NAME = 'kols';
                 }
             };
 
-            const openModalPlatform = () => { 
+            const openModalPlatform = async () => { 
+                await populatePlatformDropdown();
                 addPlatformModal.classList.remove('hidden');
             };
 
@@ -468,9 +493,10 @@ const STORE_NAME = 'kols';
                 addPlatformForm.reset();
             };
 
-            const openModalEditPlatform = (platform) => {
+            const openModalEditPlatform = async (platform) => {
                 document.getElementById('edit-platform-id').value = platform.id;
-                document.getElementById('edit-platform-name').value = platform.platformName;
+                const platformSelect = document.getElementById('edit-platform-name');
+                await populatePlatformDropdown(platformSelect, platform.platformCode);
                 document.getElementById('edit-platform-handle').value = platform.handle;
                 document.getElementById('edit-platform-followers').value = platform.followers;
                 editPlatformModal.classList.remove('hidden');
@@ -826,8 +852,19 @@ const STORE_NAME = 'kols';
                 e.preventDefault();
                 const kol = kols.find(k => k.id === currentKOLId);
                 if (kol) {
+                    const platformSelect = document.getElementById('add-platform-name');
+                    const platformCode = platformSelect.value;
+
+                    // Check for duplicates
+                    const isDuplicate = kol.platforms.some(p => p.platformCode === platformCode);
+                    if (isDuplicate) {
+                        alert('This platform already exists for this KOL.');
+                        return;
+                    }
+
                     const newPlatform = {
-                        platformName: document.getElementById('add-platform-name').value,
+                        platformName: platformSelect.options[platformSelect.selectedIndex].text,
+                        platformCode: platformCode,
                         handle: document.getElementById('add-platform-handle').value,
                         followers: parseInt(document.getElementById('add-platform-followers').value, 10),
                         id: 'p' + nextPlatformId++
@@ -959,7 +996,18 @@ const STORE_NAME = 'kols';
                 if (kol) {
                     const platform = kol.platforms.find(p => p.id === platformId);
                     if (platform) {
-                        platform.platformName = document.getElementById('edit-platform-name').value;
+                        const platformSelect = document.getElementById('edit-platform-name');
+                        const platformCode = platformSelect.value;
+
+                        // Check for duplicates, excluding the current platform being edited
+                        const isDuplicate = kol.platforms.some(p => p.platformCode === platformCode && p.id !== platformId);
+                        if (isDuplicate) {
+                            alert('This platform already exists for this KOL.');
+                            return;
+                        }
+
+                        platform.platformName = platformSelect.options[platformSelect.selectedIndex].text;
+                        platform.platformCode = platformCode;
                         platform.handle = document.getElementById('edit-platform-handle').value;
                         platform.followers = parseInt(document.getElementById('edit-platform-followers').value, 10);
                         saveKOLsToDB();
@@ -1088,6 +1136,7 @@ const STORE_NAME = 'kols';
                 loadGeneralCodeData(STORES.countries, countriesList);
                 loadGeneralCodeData(STORES.ageRanges, ageRangesList);
                 loadGeneralCodeData(STORES.packages, packagesList);
+                loadGeneralCodeData(STORES.platforms, platformsList);
             };
 
             generalCodeForm.addEventListener('submit', (e) => {
@@ -1120,6 +1169,7 @@ const STORE_NAME = 'kols';
             addCountryBtn.addEventListener('click', () => openGeneralCodeModal(STORES.countries, 'Add/Edit Country'));
             addAgeRangeBtn.addEventListener('click', () => openGeneralCodeModal(STORES.ageRanges, 'Add/Edit Age Range'));
             addPackageBtn.addEventListener('click', () => openGeneralCodeModal(STORES.packages, 'Add/Edit Package'));
+            addPlatformBtnGeneral.addEventListener('click', () => openGeneralCodeModal(STORES.platforms, 'Add/Edit Platform'));
 
             generalCodeCloseBtn.addEventListener('click', closeGeneralCodeModal);
             generalCodeModal.addEventListener('click', (e) => {
@@ -1143,6 +1193,7 @@ const STORE_NAME = 'kols';
                         if (storeName === STORES.countries) title = 'Edit Country';
                         if (storeName === STORES.ageRanges) title = 'Edit Age Range';
                         if (storeName === STORES.packages) title = 'Edit Package';
+                        if (storeName === STORES.platforms) title = 'Edit Platform';
                         openGeneralCodeModal(storeName, title, data);
                     };
                 }
@@ -1243,26 +1294,53 @@ const STORE_NAME = 'kols';
             };
 
             const populatePlatformSelect = async () => {
-                if (!db) return;
-                const transaction = db.transaction([STORE_NAME], 'readonly');
-                const objectStore = transaction.objectStore(STORE_NAME);
-                const request = objectStore.getAll();
+                const platforms = await getPlatformOptionsFromDB();
+                platformSelectReport.innerHTML = '<option value="">All Platforms</option>';
+                platforms.forEach(platform => {
+                    const option = document.createElement('option');
+                    option.value = platform.code;
+                    option.textContent = platform.desc;
+                    platformSelectReport.appendChild(option);
+                });
+            };
 
-                request.onsuccess = (event) => {
-                    const allKOLs = event.target.result;
-                    const allPlatforms = new Set();
-                    allKOLs.forEach(kol => {
-                        kol.platforms.forEach(p => allPlatforms.add(p.platformName));
-                    });
+            const getPlatformOptionsFromDB = () => {
+                return new Promise((resolve, reject) => {
+                    if (!db) {
+                        reject("IndexedDB not ready.");
+                        return;
+                    }
+                    const transaction = db.transaction([STORES.platforms], 'readonly');
+                    const objectStore = transaction.objectStore(STORES.platforms);
+                    const request = objectStore.getAll();
 
-                    platformSelectReport.innerHTML = '<option value="">All Platforms</option>';
-                    allPlatforms.forEach(platform => {
+                    request.onsuccess = (event) => {
+                        resolve(event.target.result);
+                    };
+                    request.onerror = (event) => {
+                        reject('Error fetching platforms from IndexedDB: ' + event.target.error);
+                    };
+                });
+            };
+
+            const populatePlatformDropdown = async (platformSelectElement, selectedValue) => {
+                const platformSelect = platformSelectElement || document.getElementById('add-platform-name');
+                try {
+                    const platforms = await getPlatformOptionsFromDB();
+                    platformSelect.innerHTML = '<option value="">Select Platform</option>';
+                    platforms.forEach(platform => {
                         const option = document.createElement('option');
-                        option.value = platform;
-                        option.textContent = platform;
-                        platformSelectReport.appendChild(option);
+                        option.value = platform.code;
+                        option.textContent = platform.desc;
+                        if (platform.code === selectedValue) {
+                            option.selected = true;
+                        }
+                        platformSelect.appendChild(option);
                     });
-                };
+                } catch (error) {
+                    console.error('Failed to populate platform dropdown:', error);
+                    platformSelect.innerHTML = '<option value="">Error loading platforms</option>';
+                }
             };
 
             const renderPackageReport = (data) => {

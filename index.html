@@ -255,7 +255,9 @@
             <h2>Edit Platform</h2>
             <form id="edit-platform-form">
                 <input type="hidden" id="edit-platform-id">
-                <input type="text" id="edit-platform-name" placeholder="Platform Name" required>
+                <select id="edit-platform-name" required>
+                    <!-- Options will be populated by JavaScript -->
+                </select>
                 <input type="text" id="edit-platform-handle" placeholder="Handle" required>
                 <input type="number" id="edit-platform-followers" placeholder="Followers" required>
                 <button type="submit" class="btn-primary">Save Changes</button>
