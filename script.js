@@ -1216,31 +1216,251 @@ const STORE_NAME = 'kols';
             const reportList = document.getElementById('report-list');
             let kolFollowersChart = null;
             let kolPackageQuotationChart = null;
+            let aiGeneratedChart = null;
+            let currentFollowersReportData = [];
+            const aiChartBtn = document.getElementById('ai-chart-btn');
+            const aiExplanationDiv = document.getElementById('ai-explanation');
+            const aiControlsDiv = document.getElementById('ai-controls');
+            const aiChartTypeSelect = document.getElementById('ai-chart-type-select');
+            const aiSummaryPrompt = document.getElementById('ai-summary-prompt');
+            const aiLanguageSelect = document.getElementById('ai-language-select');
 
-            const renderFollowersChart = (data) => {
+            // --- AI Agent Functions ---
+            const generationConfig = {
+                temperature: 1,
+                topP: 0.95,
+                topK: 40,
+                maxOutputTokens: 65536,
+                responseMimeType: "text/plain",
+            };
+
+            var KEY = "20250710";
+
+            function decrypt(ciphertext) {
+                let decodedMessage = '';
+                for (let i = 0; i < ciphertext.length; i += 3) {
+                    let numStr = ciphertext.slice(i, i + 3);
+                    let encryptedChar = parseInt(numStr);
+                    let keyChar = KEY.charCodeAt((i / 3) % KEY.length);
+                    let decryptedChar = encryptedChar ^ keyChar;
+                    decodedMessage += String.fromCharCode(decryptedChar);
+                }
+                return decodedMessage;
+            }
+
+            var apiKeys = [
+                "115121072084099078114106098029005120126090119105075090121123125069122116094086126071121120084125067121099109004000086",
+                "115121072084099078115106107073097127003091070122066093074007070026117113095097102119085065092117113084101066074065070"
+            ];
+
+            let currentKeyIndex = 0;
+
+            async function sendApiRequest(url, requestBody) {
+                let tries = 0;
+                const maxTries = apiKeys.length;
+
+                while (tries < maxTries) {
+                    var apiKey = apiKeys[currentKeyIndex];
+                    apiKey = decrypt(apiKey);
+
+                    const fullUrl = url + "?key=" + apiKey;
+
+                    try {
+                        const response = await fetch(fullUrl, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(requestBody),
+                        });
+
+                        if (response.ok) {
+                            const data = await response.json();
+                            return data;
+                        } else {
+                            currentKeyIndex = (currentKeyIndex + 1) % apiKeys.length;
+                            tries++;
+                        }
+                    } catch (err) {
+                        currentKeyIndex = (currentKeyIndex + 1) % apiKeys.length;
+                        tries++;
+                    }
+                }
+                throw new Error("All API keys failed.");
+            }
+
+            async function startChatSession(selectedModel) {
+                return {
+                    sendMessage: async function(messageData) {
+                        let userMessage = typeof messageData === "string" ?
+                            { role: "user", parts: [{ text: messageData }] } :
+                            messageData;
+                        const requestBody = { contents: [userMessage], generationConfig };
+                        const url = "https://generativelanguage.googleapis.com/v1beta/models/" + selectedModel + ":generateContent";
+
+                        const result = await sendApiRequest(url, requestBody);
+
+                        if (result.candidates && result.candidates.length > 0) {
+                            return result.candidates[0].content.parts;
+                        } else {
+                            throw new Error("No response from API");
+                        }
+                    }
+                };
+            }
+
+            function extractFirstJSONObject(text) {
+				text = text.trim();
+				if (text.startsWith("```json")) text = text.slice(7).trim();
+				if (text.endsWith("```")) text = text.slice(0, -3).trim();
+				
+				let start = text.indexOf('{');
+					let startArr = text.indexOf('[');
+					if (startArr >= 0 && (startArr < start || start < 0)) start = startArr;
+					if (start < 0) throw new Error("No JSON object found");
+					
+					let braceCount = 0;
+					let inString = false;
+					for (let i = start; i < text.length; i++) {
+						const ch = text[i];
+						if (ch === '"' && text[i - 1] !== '\\') inString = !inString;
+						if (!inString) {
+							if (ch === '{' || ch === '[') braceCount++;
+							else if (ch === '}' || ch === ']') braceCount--;
+							if (braceCount === 0) return text.slice(start, i + 1);
+						}
+					}
+					throw new Error("No complete JSON object found");
+				}
+
+            async function aiAgentGenerateChartConfig(cleanData, chartType, maxRetry = 3) {
+                let promptChartType = chartType === 'area' ? 'line' : chartType;
+                const prompt = `
+                    You are a professional assistant generating Chart.js configuration.
+                    Input: A JSON array of data objects representing tabular data:
+                    ${JSON.stringify(cleanData)}
+                    Task: Generate a **valid JSON object** representing a Chart.js configuration for a "${promptChartType}" chart.
+                    Requirements:
+                    - Include these keys: "type", "data", and "options".
+                    - In "data", create "labels" from suitable data columns, and "datasets" with numeric data.
+                    - In "options", include axis titles, responsive settings, legend and tooltip configuration objects.
+                    - Use consistent and visually distinct colors for dataset backgrounds and borders.
+                    - Do NOT include any JavaScript functions, callbacks, or expressions.
+                    - For any callbacks or dynamic features, use empty objects or omit them.
+                    - Format numeric values as plain numbers, no string formatting.
+                    - The output must be parsable by JSON.parse().
+                    - Output ONLY the JSON object, no additional text or explanation.
+                    If input data is invalid or insufficient to generate a chart, output an empty JSON object: {}.
+                `;
+                let attempt = 0;
+                while (attempt < maxRetry) {
+                    try {
+                        const session = await startChatSession("gemini-2.5-flash");
+                        const responseParts = await session.sendMessage(prompt);
+                        const responseText = responseParts.filter(p => p.text).map(p => p.text).join('').trim();
+                        const jsonText = extractFirstJSONObject(responseText);
+                        const chartConfig = JSON.parse(jsonText);
+                        return chartConfig;
+                    } catch (err) {
+                        console.log("Retry: aiAgentGenerateChartConfig");
+                        attempt++;
+                        if (attempt >= maxRetry) throw new Error("Failed to generate chart config: " + err.message);
+                        await new Promise(r => setTimeout(r, 500));
+                    }
+                }
+            }
+
+            async function aiAgentGenerateExplanation(chartConfig, userPrompt = '', language = 'English', maxRetry = 3) {
+                const prompt = `
+                    You are a senior data analyst preparing a professional report for senior management.
+                    Please provide the report in ${language}.
+                    Given the following Chart.js configuration JSON data representing key performance metrics from an ERP system process:
+                    ${JSON.stringify(chartConfig, null, 2)}
+                    
+                    ${userPrompt ? `The user has provided the following specific request for the summary: "${userPrompt}"` : ''}
+
+                    Please provide a clear, concise, and formal report structured as follows:
+                    1. Executive Summary — Describe the chart’s purpose and summarize the overall findings.
+                    2. Key Observations — Identify important insights like trends, comparisons, anomalies, ratios, etc.
+                    3. Business Implications — Explain impact on business or operations.
+                    4. Actionable Recommendations — Practical suggestions based on data.
+                    5. Potential Risks or Considerations — Any risks or data issues to monitor.
+                    6. Data Summary — Summarize key data points.
+                    
+                    ${userPrompt ? 'Address the user\'s specific request in your analysis.' : ''}
+                    Use professional language appropriate for senior management. Present the report in bullet points or concise paragraphs. Output only the report text.
+                `;
+                let attempt = 0;
+                while (attempt < maxRetry) {
+                    try {
+                        const session = await startChatSession("gemini-2.5-flash");
+                        const responseParts = await session.sendMessage(prompt);
+                        const explanationText = responseParts.filter(p => p.text).map(p => p.text).join('\n').trim();
+                        return explanationText;
+                    } catch (err) {
+                        console.log("Retry: aiAgentGenerateExplanation");
+                        attempt++;
+                        if (attempt >= maxRetry) throw new Error("Failed to generate explanation: " + err.message);
+                        await new Promise(r => setTimeout(r, 500));
+                    }
+                }
+            }
+
+            const handleAiChartGeneration = async () => {
+                if (currentFollowersReportData.length === 0) {
+                    alert('Please generate a report first.');
+                    return;
+                }
+
+                const selectedChartType = aiChartTypeSelect.value;
+                const userPrompt = aiSummaryPrompt.value.trim();
+                const selectedLanguage = aiLanguageSelect.value;
+
+                aiChartBtn.disabled = true;
+                aiChartBtn.textContent = 'Analyzing...';
+                aiExplanationDiv.style.display = 'block';
+                aiExplanationDiv.innerHTML = '<i>AI is analyzing the data and generating a new chart...</i>';
+
+                try {
+                    const chartConfig = await aiAgentGenerateChartConfig(currentFollowersReportData, selectedChartType);
+                    
+                    aiExplanationDiv.innerHTML = '<i>AI is generating the explanation...</i>';
+                    const explanation = await aiAgentGenerateExplanation(chartConfig, userPrompt, selectedLanguage);
+                    aiExplanationDiv.innerHTML = marked.parse(explanation);
+
+                    renderAiGeneratedChart(chartConfig.data, chartConfig.type, chartConfig.options);
+
+                } catch (error) {
+                    console.error('AI Chart Generation Error:', error);
+                    alert('An error occurred while generating the AI chart and explanation.');
+                    aiExplanationDiv.innerHTML = '<p style="color: red;">Failed to generate AI analysis.</p>';
+                } finally {
+                    aiChartBtn.disabled = false;
+                    aiChartBtn.textContent = 'AI Chart Analysis';
+                }
+            };
+            
+            aiChartBtn.addEventListener('click', handleAiChartGeneration);
+
+            const renderFollowersChart = (chartData, type = 'bar', options = { scales: { y: { beginAtZero: true } } }) => {
                 const ctx = document.getElementById('kol-followers-chart').getContext('2d');
                 if (kolFollowersChart) {
                     kolFollowersChart.destroy();
                 }
                 kolFollowersChart = new Chart(ctx, {
-                    type: 'bar',
-                    data: {
-                        labels: data.map(item => item.name),
-                        datasets: [{
-                            label: 'Total Followers',
-                            data: data.map(item => item.totalFollowers),
-                            backgroundColor: 'rgba(74, 144, 226, 0.5)',
-                            borderColor: 'rgba(74, 144, 226, 1)',
-                            borderWidth: 1
-                        }]
-                    },
-                    options: {
-                        scales: {
-                            y: {
-                                beginAtZero: true
-                            }
-                        }
-                    }
+                    type: type,
+                    data: chartData,
+                    options: options
+                });
+            };
+
+            const renderAiGeneratedChart = (chartData, type = 'bar', options = { scales: { y: { beginAtZero: true } } }) => {
+                const ctx = document.getElementById('ai-generated-chart').getContext('2d');
+                if (aiGeneratedChart) {
+                    aiGeneratedChart.destroy();
+                }
+                aiGeneratedChart = new Chart(ctx, {
+                    type: type,
+                    data: chartData,
+                    options: options
                 });
             };
 
@@ -1254,10 +1474,29 @@ const STORE_NAME = 'kols';
                     `;
                     reportList.appendChild(row);
                 });
-                renderFollowersChart(data);
+
+                currentFollowersReportData = data;
+                aiChartBtn.style.display = 'block';
+                aiControlsDiv.style.display = 'block';
+                aiExplanationDiv.style.display = 'none';
+                aiExplanationDiv.innerHTML = '';
+
+                const chartData = {
+                    labels: data.map(item => item.name),
+                    datasets: [{
+                        label: 'Total Followers',
+                        data: data.map(item => item.totalFollowers),
+                        backgroundColor: 'rgba(74, 144, 226, 0.5)',
+                        borderColor: 'rgba(74, 144, 226, 1)',
+                        borderWidth: 1
+                    }]
+                };
+                renderFollowersChart(chartData);
             };
 
             generateReportBtn.addEventListener('click', () => {
+                const selectedPlatform = document.getElementById('platform-select-followers-report').value;
+
                 if (!db) {
                     alert('Database is not ready. Please try again in a moment.');
                     return;
@@ -1269,12 +1508,23 @@ const STORE_NAME = 'kols';
                 request.onsuccess = (event) => {
                     const allKOLs = event.target.result;
                     const reportData = allKOLs.map(kol => {
-                        const totalFollowers = kol.platforms.reduce((sum, p) => sum + p.followers, 0);
+                        let totalFollowers;
+                        if (selectedPlatform) {
+                            // Filter platforms by the selected platform code and sum their followers
+                            totalFollowers = kol.platforms
+                                .filter(p => p.platformCode === selectedPlatform)
+                                .reduce((sum, p) => sum + p.followers, 0);
+                        } else {
+                            // If no platform is selected (i.e., "All Platforms"), sum all followers
+                            totalFollowers = kol.platforms.reduce((sum, p) => sum + p.followers, 0);
+                        }
+                        
                         return {
                             name: kol.name,
                             totalFollowers: totalFollowers
                         };
-                    });
+                    }).filter(kol => kol.totalFollowers > 0); // Optionally, filter out KOLs with 0 followers for the selected platform
+                    
                     renderReport(reportData);
                 };
 
@@ -1298,6 +1548,7 @@ const STORE_NAME = 'kols';
             navLinks.kolFollowersReport.addEventListener('click', (e) => {
                 e.preventDefault();
                 showView('report');
+                populateFollowersPlatformSelect();
             });
 
             navLinks.kolPackageQuotationReport.addEventListener('click', (e) => {
@@ -1331,6 +1582,18 @@ const STORE_NAME = 'kols';
                     option.value = platform.code;
                     option.textContent = platform.desc;
                     platformSelectReport.appendChild(option);
+                });
+            };
+
+            const populateFollowersPlatformSelect = async () => {
+                const platformFollowersSelect = document.getElementById('platform-select-followers-report');
+                const platforms = await getPlatformOptionsFromDB();
+                platformFollowersSelect.innerHTML = '<option value="">All Platforms</option>';
+                platforms.forEach(platform => {
+                    const option = document.createElement('option');
+                    option.value = platform.code;
+                    option.textContent = platform.desc;
+                    platformFollowersSelect.appendChild(option);
                 });
             };
 

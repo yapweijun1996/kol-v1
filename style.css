@@ -381,3 +381,35 @@
         border-radius: 8px;
         background-color: #fff;
     }
+
+    #ai-controls {
+        padding: 20px;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        background-color: #f9f9f9;
+        margin-top: 20px;
+    }
+
+    #ai-controls .form-group {
+        margin-bottom: 15px;
+    }
+
+    #ai-controls label {
+        display: block;
+        margin-bottom: 5px;
+        font-weight: 600;
+        color: var(--primary-color);
+    }
+
+    #ai-controls select,
+    #ai-controls textarea {
+        width: 100%;
+        padding: 10px;
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        box-sizing: border-box; /* Ensures padding doesn't affect width */
+    }
+
+    #ai-controls textarea {
+        resize: vertical;
+    }

@@ -111,6 +111,12 @@
             <h2>KOL Followers Report</h2>
             <div class="sub-section">
                 <h3>Prelim</h3>
+                <div class="form-group">
+                    <label for="platform-select-followers-report">Select Platform:</label>
+                    <select id="platform-select-followers-report">
+                        <!-- Options will be populated by JavaScript -->
+                    </select>
+                </div>
                 <button class="btn-primary" id="generate-report-btn">Submit</button>
             </div>
             <div class="sub-section">
@@ -130,6 +136,37 @@
                 <div class="chart-container">
                     <canvas id="kol-followers-chart"></canvas>
                 </div>
+                <button class="btn-secondary" id="ai-chart-btn" style="display: none; margin-top: 10px;">AI Chart Analysis</button>
+                <div id="ai-controls" style="display: none; margin-top: 15px;">
+                    <div class="form-group">
+                        <label for="ai-chart-type-select">Select Chart Type:</label>
+                        <select id="ai-chart-type-select">
+                            <option value="bar">Bar</option>
+                            <option value="line">Line</option>
+                            <option value="pie">Pie</option>
+                            <option value="doughnut">Doughnut</option>
+                            <option value="polarArea">Polar Area</option>
+                            <option value="radar">Radar</option>
+                            <option value="scatter">Scatter</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="ai-summary-prompt">AI Summary Prompt:</label>
+                        <textarea id="ai-summary-prompt" rows="3" placeholder="e.g., 'Summarize the top 3 KOLs'"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="ai-language-select">Select Language:</label>
+                        <select id="ai-language-select">
+                            <option value="English">English</option>
+                            <option value="Mandarin">Mandarin</option>
+                            <option value="Malay">Malay</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="chart-container" style="margin-top: 20px;">
+                    <canvas id="ai-generated-chart" style="min-height: 433px;"></canvas>
+                </div>
+                <div id="ai-explanation" style="display: none; margin-top: 15px; padding: 10px; border: 1px solid #ddd; border-radius: 4px;"></div>
             </div>
         </div>
         <div id="kol-package-quotation-report-section" class="hidden">
@@ -300,6 +337,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="script.js"></script>
 
     <div id="manage-details-modal" class="modal-overlay hidden">
