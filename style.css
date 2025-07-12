@@ -101,7 +101,7 @@
             gap: 15px;
         }
 
-        form input,
+        form input:not([type="checkbox"]),
         form select {
             padding: 10px;
             border: 1px solid var(--border-color);
@@ -109,6 +109,9 @@
             background-color: #fff; /* Ensure select has a white background */
             font-family: inherit; /* Inherit font from body */
             font-size: inherit; /* Inherit font size */
+        }
+
+        form select {
             -webkit-appearance: none; /* Remove default apearance for webkit browsers */
             -moz-appearance: none; /* Remove default apearance for mozilla browsers */
             appearance: none; /* Remove default apearance */
